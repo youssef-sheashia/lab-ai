@@ -1,3 +1,10 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+const API_KEY = process.env.API_KEY;
+const API_URL = process.env.API_URL;
+const STORAGE_KEY = process.env.STORAGE_KEY;
+
 let chatHistory = [];
 let currentConversation = null;
 let isLoading = false;
