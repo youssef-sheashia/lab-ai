@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sorting Visualization Demo</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 900px;
+        margin: 30px auto;
+        padding: 20px;
+        background-color: #f4f4f4;
+        color: #222;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      input[type="text"], select {
+        width: 320px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 16px;
+      }
+      button {
+        padding: 10px 20px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      #result {
+        margin-top: 20px;
+        font-size: 18px;
+      }
+      #visualizer {
+        margin-top: 24px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        background: white;
+        padding: 12px;
+      }
+      canvas {
+        width: 100%;
+        height: 320px;
+        display: block;
+        border-radius: 6px;
+      }
+      .footer {
+        margin-top: 18px;
+        font-size: 14px;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sorting Visualization Demo</h1>
+    <p>Enter numbers separated by commas, choose an algorithm, then sort or visualize.</p>
+
+    <div class="controls">
+      <input type="text" id="numbers" placeholder="e.g., 3,1,4,1,5" />
+      <select id="algorithm">
+        <option value="quickSort">QuickSort</option>
+        <option value="parallelQuickSort">Parallel QuickSort</option>
+        <option value="mergeSort">Merge Sort</option>
+        <option value="heapSort">Heap Sort</option>
+        <option value="insertionSort">Insertion Sort</option>
+        <option value="bubbleSort">Bubble Sort</option>
+      </select>
+      <button onclick="sortNumbers()">Sort</button>
+      <button onclick="visualizeSorting()">Visualize</button>
+    </div>
+
+    <div id="result">Result will appear here.</div>
+
+    <div id="visualizer">
+      <canvas id="canvas" width="840" height="320"></canvas>
+    </div>
+
+    <div class="footer">
+      Parallel QuickSort uses Web Workers when available. Visualization is shown using canvas animation.
+    </div>
+
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const resultText = document.getElementById('result');
+      const algorithmSelect = document.getElementById('algorithm');
+      const animationDelay = 80;
+      const maxVisualSize = 120;
+
+      function parseNumbers() {
+        const input = document.getElementById('numbers').value;
+        return input
+          .split(',')
+          .map((num) => parseFloat(num.trim()))
+          .filter((num) => !isNaN(num));
+      }
+
+      function updateCanvas(array, highlights = []) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!array || array.length === 0) return;
+        const width = canvas.width / array.length;
+        const maxValue = Math.max(...array.map((n) => Math.abs(n)), maxVisualSize);
+        array.forEach((value, index) => {
+          const normalized = Math.abs(value) / maxValue;
+          const barHeight = normalized * (canvas.height - 30);
+          const x = index * width;
+          const y = canvas.height - barHeight;
+          const isHighlighted = highlights.includes(index);
+          ctx.fillStyle = isHighlighted ? '#f39c12' : '#3498db';
+          ctx.fillRect(x + 2, y, width - 4, barHeight);
+          if (width > 25) {
+            ctx.fillStyle = '#222';
+            ctx.font = '12px Arial';
+            ctx.fillText(value, x + 4, y - 6);
+          }
+        });
+      }
+
+      function bubbleSortSteps(arr) {
+        const a = arr.slice();
+        const steps = [];
+        for (let i = 0; i < a.length; i++) {
+          for (let j = 0; j < a.length - i - 1; j++) {
+            steps.push({ array: a.slice(), highlight: [j, j + 1] });
+            if (a[j] > a[j + 1]) {
+              [a[j], a[j + 1]] = [a[j + 1], a[j]];
+              steps.push({ array: a.slice(), highlight: [j, j + 1] });
+            }
+          }
+        }
+        steps.push({ array: a.slice(), highlight: [] });
+        return steps;
+      }
+
+      function insertionSortSteps(arr) {
+        const a = arr.slice();
+        const steps = [];
+        for (let i = 1; i < a.length; i++) {
+          let key = a[i];
+          let j = i - 1;
+          while (j >= 0 && a[j] > key) {
+            a[j + 1] = a[j];
+            steps.push({ array: a.slice(), highlight: [j, j + 1] });
+            j--;
+          }
+          a[j + 1] = key;
+          steps.push({ array: a.slice(), highlight: [j + 1] });
+        }
+        steps.push({ array: a.slice(), highlight: [] });
+        return steps;
+      }
+
+      function mergeSortSteps(arr) {
+        const steps = [];
+        function merge(left, right) {
+          const merged = [];
+          let i = 0;
+          let j = 0;
+          while (i < left.length && j < right.length) {
+            if (left[i] < right[j]) {
+              merged.push(left[i++]);
+            } else {
+              merged.push(right[j++]);
+            }
+          }
+          return merged.concat(left.slice(i)).concat(right.slice(j));
+        }
+        function sort(a) {
+          if (a.length <= 1) return a;
+          const mid = Math.floor(a.length / 2);
+          const left = sort(a.slice(0, mid));
+          const right = sort(a.slice(mid));
+          const merged = merge(left, right);
+          steps.push({ array: merged.slice(), highlight: [] });
+          return merged;
+        }
+        sort(arr.slice());
+        steps.push({ array: arr.slice().sort((a, b) => a - b), highlight: [] });
+        return steps;
+      }
+
+      function heapSortSteps(arr) {
+        const a = arr.slice();
+        const steps = [];
+        function heapify(n, i) {
+          let largest = i;
+          const left = 2 * i + 1;
+          const right = 2 * i + 2;
+          if (left < n && a[left] > a[largest]) largest = left;
+          if (right < n && a[right] > a[largest]) largest = right;
+          if (largest !== i) {
+            [a[i], a[largest]] = [a[largest], a[i]];
+            steps.push({ array: a.slice(), highlight: [i, largest] });
+            heapify(n, largest);
+          }
+        }
+        const n = a.length;
+        for (let i = Math.floor(n / 2) - 1; i >= 0; i--) {
+          heapify(n, i);
+        }
+        for (let i = n - 1; i > 0; i--) {
+          [a[0], a[i]] = [a[i], a[0]];
+          steps.push({ array: a.slice(), highlight: [0, i] });
+          heapify(i, 0);
+        }
+        steps.push({ array: a.slice(), highlight: [] });
+        return steps;
+      }
+
+      function quickSortSteps(arr) {
+        const a = arr.slice();
+        const steps = [];
+        function sort(left, right) {
+          if (left >= right) return;
+          const pivot = a[Math.floor((left + right) / 2)];
+          let i = left;
+          let j = right;
+          while (i <= j) {
+            while (a[i] < pivot) i++;
+            while (a[j] > pivot) j--;
+            if (i <= j) {
+              [a[i], a[j]] = [a[j], a[i]];
+              steps.push({ array: a.slice(), highlight: [i, j] });
+              i++;
+              j--;
+            }
+          }
+          if (left < j) sort(left, j);
+          if (i < right) sort(i, right);
+        }
+        sort(0, a.length - 1);
+        steps.push({ array: a.slice(), highlight: [] });
+        return steps;
+      }
+
+      function mergeSort(arr) {
+        if (arr.length <= 1) return arr;
+        const mid = Math.floor(arr.length / 2);
+        return mergeSort(arr.slice(0, mid)).concat(mergeSort(arr.slice(mid)));
+      }
+
+      function heapSort(arr) {
+        const a = arr.slice();
+        const n = a.length;
+        function heapify(n, i) {
+          let largest = i;
+          const left = 2 * i + 1;
+          const right = 2 * i + 2;
+          if (left < n && a[left] > a[largest]) largest = left;
+          if (right < n && a[right] > a[largest]) largest = right;
+          if (largest !== i) {
+            [a[i], a[largest]] = [a[largest], a[i]];
+            heapify(n, largest);
+          }
+        }
+        for (let i = Math.floor(n / 2) - 1; i >= 0; i--) {
+          heapify(n, i);
+        }
+        for (let i = n - 1; i > 0; i--) {
+          [a[0], a[i]] = [a[i], a[0]];
+          heapify(i, 0);
+        }
+        return a;
+      }
+
+      function insertionSort(arr) {
+        const a = arr.slice();
+        for (let i = 1; i < a.length; i++) {
+          let key = a[i];
+          let j = i - 1;
+          while (j >= 0 && a[j] > key) {
+            a[j + 1] = a[j];
+            j--;
+          }
+          a[j + 1] = key;
+        }
+        return a;
+      }
+
+      function bubbleSort(arr) {
+        const a = arr.slice();
+        for (let i = 0; i < a.length; i++) {
+          for (let j = 0; j < a.length - i - 1; j++) {
+            if (a[j] > a[j + 1]) {
+              [a[j], a[j + 1]] = [a[j + 1], a[j]];
+            }
+          }
+        }
+        return a;
+      }
+
+      function quickSort(arr) {
+        if (arr.length <= 1) return arr;
+        const pivotIndex = Math.floor(arr.length / 2);
+        const pivot = arr[pivotIndex];
+        const left = arr.filter((_, idx) => idx !== pivotIndex && arr[idx] < pivot);
+        const equal = arr.filter((value) => value === pivot);
+        const right = arr.filter((_, idx) => idx !== pivotIndex && arr[idx] > pivot);
+        return quickSort(left).concat(equal, quickSort(right));
+      }
+
+      function createParallelWorker() {
+        const workerScript = `
+          self.onmessage = function(event) {
+            const arr = event.data;
+            function quickSort(a) {
+              if (a.length <= 1) return a;
+              const pivotIndex = Math.floor(a.length / 2);
+              const pivot = a[pivotIndex];
+              const left = a.filter((_, idx) => idx !== pivotIndex && a[idx] < pivot);
+              const equal = a.filter((value) => value === pivot);
+              const right = a.filter((_, idx) => idx !== pivotIndex && a[idx] > pivot);
+              return quickSort(left).concat(equal, quickSort(right));
+            }
+            self.postMessage(quickSort(arr));
+          }`;
+        const blob = new Blob([workerScript], { type: 'application/javascript' });
+        return new Worker(URL.createObjectURL(blob));
+      }
+
+      function parallelQuickSort(arr) {
+        if (typeof Worker === 'undefined' || arr.length < 50) {
+          return Promise.resolve(quickSort(arr));
+        }
+        const pivotIndex = Math.floor(arr.length / 2);
+        const pivot = arr[pivotIndex];
+        const left = arr.filter((_, idx) => idx !== pivotIndex && arr[idx] < pivot);
+        const equal = arr.filter((value) => value === pivot);
+        const right = arr.filter((_, idx) => idx !== pivotIndex && arr[idx] > pivot);
+        const workerLeft = createParallelWorker();
+        const workerRight = createParallelWorker();
+        return Promise.all([
+          new Promise((resolve) => {
+            workerLeft.onmessage = (event) => {
+              resolve(event.data);
+              workerLeft.terminate();
+            };
+            workerLeft.postMessage(left);
+          }),
+          new Promise((resolve) => {
+            workerRight.onmessage = (event) => {
+              resolve(event.data);
+              workerRight.terminate();
+            };
+            workerRight.postMessage(right);
+          })
+        ]).then(([leftSorted, rightSorted]) => leftSorted.concat(equal, rightSorted));
+      }
+
+      function getSteps(array, algorithm) {
+        switch (algorithm) {
+          case 'bubbleSort':
+            return bubbleSortSteps(array);
+          case 'insertionSort':
+            return insertionSortSteps(array);
+          case 'mergeSort':
+            return mergeSortSteps(array);
+          case 'heapSort':
+            return heapSortSteps(array);
+          case 'parallelQuickSort':
+          case 'quickSort':
+          default:
+            return quickSortSteps(array);
+        }
+      }
+
+      async function sortNumbers() {
+        const numbers = parseNumbers();
+        const algorithm = algorithmSelect.value;
+        if (numbers.length === 0) {
+          resultText.textContent = 'Please enter valid numbers.';
+          return;
+        }
+        resultText.textContent = 'Sorting...';
+        let sorted;
+        if (algorithm === 'mergeSort') {
+          sorted = mergeSort(numbers);
+        } else if (algorithm === 'heapSort') {
+          sorted = heapSort(numbers);
+        } else if (algorithm === 'insertionSort') {
+          sorted = insertionSort(numbers);
+        } else if (algorithm === 'bubbleSort') {
+          sorted = bubbleSort(numbers);
+        } else if (algorithm === 'parallelQuickSort') {
+          sorted = await parallelQuickSort(numbers);
+        } else {
+          sorted = quickSort(numbers);
+        }
+        resultText.textContent = `Sorted (${algorithm}): ${sorted.join(', ')}`;
+        updateCanvas(numbers);
+      }
+
+      async function visualizeSorting() {
+        const numbers = parseNumbers();
+        if (numbers.length === 0) {
+          resultText.textContent = 'Please enter valid numbers.';
+          return;
+        }
+        const algorithm = algorithmSelect.value;
+        resultText.textContent = `Visualizing ${algorithm}...`;
+        const steps = getSteps(numbers, algorithm);
+        await animateSteps(steps);
+        resultText.textContent = `Finished visualization (${algorithm}).`;
+      }
+
+      function animateSteps(steps) {
+        return new Promise((resolve) => {
+          let index = 0;
+          const interval = setInterval(() => {
+            const step = steps[index];
+            updateCanvas(step.array, step.highlight);
+            index += 1;
+            if (index >= steps.length) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, animationDelay);
+        });
+      }
+
+      updateCanvas([]);
+    </script>
+  </body>
+</html>
